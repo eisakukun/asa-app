@@ -435,7 +435,7 @@ function msSaveSync(){
   localStorage.setItem("ms_sb_key",document.getElementById("msKey").value.trim());
   localStorage.setItem("ms_sb_code",document.getElementById("msCode").value.trim());
   msCloseSync();
-  if(msSyncOn()){ msSetStatus("☁️ つなぎました"); msSync(true); } else msSetStatus("（3つ入れると同期ON）");
+  if(msSyncOn()){ msSetStatus("☁️ つなぎました"); msSync(true); } else msSetStatus("この端末に保存中（同期オフ）");
 }
 /* ---- バックアップ / 復元 ---- */
 function msExport(){
@@ -457,9 +457,11 @@ async function msImport(input){
       if(!confirm("このバックアップで今の記録を置きかえます。よろしい？")){input.value="";return;}
       if(data.ts_today!=null)localStorage.setItem("ts_today",data.ts_today);
       if(data.ts_history!=null)localStorage.setItem("ts_history",data.ts_history);
-      localStorage.setItem("ms_ts",String(Date.now()));
+      // 復元した各日に新しい時刻を打つ＝同期していれば、この端末の内容が正としてクラウドへ上がる
+      try{ const arr=JSON.parse(data.ts_history||"[]"), u={}, t=Date.now();
+        arr.forEach(h=>{ if(h&&h.date) u[h.date]=t; }); jset("asa_day_u",u); localStorage.removeItem("asa_hist_snap"); }catch(e){}
       input.value="";
-      if(msSyncOn()){ try{await msPushNow();}catch(e){} }
+      if(msSyncOn()){ try{await msSync(false);}catch(e){} }
       alert("復元しました！画面を更新します。"); location.reload();
     }catch(e){ alert("読み込み失敗："+e.message); input.value=""; }
   };
@@ -468,7 +470,7 @@ async function msImport(input){
 render();
 
 /* ---- 起動と自動同期（押さずに揃う） ---- */
-if(msSyncOn()){ msSetStatus("☁️ 同期ON"); msSync(false); } else msSetStatus("（未設定）");
+if(msSyncOn()){ msSetStatus("☁️ 同期ON"); msSync(false); } else msSetStatus("この端末に保存中（同期オフ）");
 setInterval(msCheck,3000);                                   // 手元の変化を送る
 document.addEventListener("click",()=>setTimeout(msCheck,400),true);
 addEventListener("online",()=>msSync(false));
@@ -476,7 +478,7 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 setInterval(()=>{ if(document.visibilityState==="visible"&&msSyncOn()&&navigator.onLine) msSync(false); },15000); // 相手の変化を取りに行く
 
 /* ---- 直したコードをiPhoneへ確実に届ける（版照合で自動reload） ---- */
-const APP_VERSION="2026-08-07-2";
+const APP_VERSION="2026-08-07-3";
 (function(){ const e=document.createElement("div"); e.textContent="v"+APP_VERSION;
   e.style.cssText="text-align:center;color:#3a3550;font-size:10px;padding:16px 0 26px;letter-spacing:.05em";
   document.body.appendChild(e); })();
