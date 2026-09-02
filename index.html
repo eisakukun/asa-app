@@ -219,7 +219,7 @@ function render(){
     div.className="step"+(s.d?" done":"");
     div.innerHTML=`
       <div class="num">${i+1}</div>
-      <input placeholder="やりたいこと ${i+1}" value="${s.t.replace(/"/g,'&quot;')}" oninput="edit(${i},this.value)">
+      <input placeholder="やりたいこと ${i+1}" value="${s.t.replace(/"/g,'&quot;')}" oninput="edit(${i},this.value)" onkeydown="stepKey(event,${i})" enterkeyhint="${i<2?'next':'done'}">
       <button class="check" onclick="toggle(${i})">✓</button>`;
     c.appendChild(div);
   });
@@ -227,10 +227,21 @@ function render(){
   document.getElementById("bar").style.width=(done/3*100)+"%";
   const all=done===3;
   document.getElementById("banner").classList.toggle("show",all);
-  document.getElementById("saveBtn").disabled=done===0;
+  const anyText=state.steps.some(s=>(s.t||"").trim()!=="");
+  document.getElementById("saveBtn").disabled=(done===0 && !anyText);
   persist();
 }
 function edit(i,v){state.steps[i].t=v; persist();}
+
+/* 入力欄で Enter：まだ空の欄があればそこへ移り、3つ埋まっていたらそのまま「きろくする」 */
+function stepKey(e,i){
+  if(e.key!=="Enter" && e.keyCode!==13) return;
+  e.preventDefault();
+  const ins=document.querySelectorAll("#steps input");
+  for(let k=i+1;k<ins.length;k++){ if(!ins[k].value.trim()){ ins[k].focus(); return; } }
+  for(let k=0;k<i;k++){ if(!ins[k].value.trim()){ ins[k].focus(); return; } }
+  if(state.steps.every(s=>(s.t||"").trim()!=="")){ e.target.blur(); saveToday(); }
+}
 function toggle(i){
   const wasAll=state.steps.filter(s=>s.d).length===3;
   state.steps[i].d=!state.steps[i].d; render();
@@ -470,7 +481,7 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 setInterval(()=>{ if(document.visibilityState==="visible"&&msSyncOn()&&navigator.onLine) msSync(false); },15000); // 相手の変化を取りに行く
 
 /* ---- 直したコードをiPhoneへ確実に届ける（版照合で自動reload） ---- */
-const APP_VERSION="2026-09-02-gas";
+const APP_VERSION="2026-09-03-enter";
 (function(){ const e=document.createElement("div"); e.textContent="v"+APP_VERSION;
   e.style.cssText="text-align:center;color:#3a3550;font-size:10px;padding:16px 0 26px;letter-spacing:.05em";
   document.body.appendChild(e); })();
