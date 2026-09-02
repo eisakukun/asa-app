@@ -470,7 +470,7 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 setInterval(()=>{ if(document.visibilityState==="visible"&&msSyncOn()&&navigator.onLine) msSync(false); },15000); // 相手の変化を取りに行く
 
 /* ---- 直したコードをiPhoneへ確実に届ける（版照合で自動reload） ---- */
-const APP_VERSION="2026-08-07-3";
+const APP_VERSION="2026-09-02-gas";
 (function(){ const e=document.createElement("div"); e.textContent="v"+APP_VERSION;
   e.style.cssText="text-align:center;color:#3a3550;font-size:10px;padding:16px 0 26px;letter-spacing:.05em";
   document.body.appendChild(e); })();
@@ -484,7 +484,6 @@ async function msCheckVersion(){
 }
 msCheckVersion();
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") msCheckVersion(); });
-setInterval(()=>{ if(msSyncOn()&&!document.hidden)msPullNow(); },20000);
 
 /* ---- サイバーパンク電子音 (Web Audio) ---- */
 (function(){
