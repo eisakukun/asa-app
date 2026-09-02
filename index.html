@@ -189,15 +189,14 @@
 <div id="msSyncWrap" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)msCloseSync()">
   <div style="background:var(--bg);border:1px solid var(--cyan);border-radius:14px;padding:20px;max-width:420px;width:100%;box-shadow:0 0 30px rgba(0,240,255,.4);">
     <div style="color:var(--cyan);font-weight:800;margin-bottom:12px;">☁️ クラウド同期（朝アプリ）</div>
-    <input id="msUrl" placeholder="Supabase URL（https://xxxx.supabase.co）" style="width:100%;box-sizing:border-box;background:#12101e;border:1px solid var(--sub);color:var(--text);padding:10px;border-radius:8px;margin-bottom:8px;font-family:inherit;">
-    <input id="msKey" type="password" placeholder="キー（sb_publishable_… でOK）" style="width:100%;box-sizing:border-box;background:#12101e;border:1px solid var(--sub);color:var(--text);padding:10px;border-radius:8px;margin-bottom:8px;font-family:inherit;">
-    <input id="msCode" placeholder="同期コード（他と別の合言葉）" style="width:100%;box-sizing:border-box;background:#12101e;border:1px solid var(--sub);color:var(--text);padding:10px;border-radius:8px;font-family:inherit;">
+    <input id="msUrl" placeholder="同期のURL（https://script.google.com/…/exec）" style="width:100%;box-sizing:border-box;background:#12101e;border:1px solid var(--sub);color:var(--text);padding:10px;border-radius:8px;margin-bottom:8px;font-family:inherit;">
+    <input id="msCode" placeholder="あいことば（未入力なら asa）" style="width:100%;box-sizing:border-box;background:#12101e;border:1px solid var(--sub);color:var(--text);padding:10px;border-radius:8px;font-family:inherit;">
     <div style="display:flex;gap:10px;margin-top:12px;">
       <button onclick="msCloseSync()" style="flex:1;background:transparent;border:1px solid var(--sub);color:var(--sub);padding:10px;border-radius:8px;font-family:inherit;cursor:pointer;">とじる</button>
       <button onclick="msSaveSync()" style="flex:1;background:var(--cyan);border:none;color:#000;padding:10px;border-radius:8px;font-family:inherit;font-weight:800;cursor:pointer;">保存して同期</button>
     </div>
     <div id="msSyncMsg" style="color:var(--sub);font-size:11px;margin-top:10px;"></div>
-    <div style="color:var(--sub);font-size:11px;margin-top:6px;line-height:1.6;">todoと<b>同じURL・キー</b>でOK。<b>同期コードだけ別</b>に（例：<b>sian-morning-2026</b>）。3つ入れると自動で消えなくなります。</div>
+    <div style="color:var(--sub);font-size:11px;margin-top:6px;line-height:1.6;">記録はGoogleスプレッドシートに貯まります。<b>URLを入れるだけ</b>で、押さなくても自動で揃います。MacとiPhoneで<b>同じURL・同じあいことば</b>を入れてください。</div>
   </div>
 </div>
 
@@ -346,8 +345,9 @@ function streak(hist){
    中身だけ「1日ずつ突き合わせて、押さずに自動で揃う」方式に作り替えた。
    履歴は date を背番号にして、日ごとに新しい方を残す＝2台で書いても消えない。
    今日の入力中(ts_today)は端末ローカル。きろくすると履歴になって同期される。 */
-const MS_SB={url:()=>localStorage.getItem("ms_sb_url")||"",key:()=>localStorage.getItem("ms_sb_key")||"",code:()=>localStorage.getItem("ms_sb_code")||""};
-function msSyncOn(){return MS_SB.url()&&MS_SB.key()&&MS_SB.code();}
+/* 同期先＝Google Apps Script（棚の実体はスプレッドシート）。URLを1つ入れるだけで動く。 */
+const MS_SB={url:()=>localStorage.getItem("ms_gas_url")||"",code:()=>localStorage.getItem("ms_gas_code")||"asa"};
+function msSyncOn(){return !!MS_SB.url();}
 function msSetStatus(t){const s=document.getElementById("msSyncStatus"); if(s)s.textContent=t;}
 const jget=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
 const jset=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
@@ -362,27 +362,20 @@ const entryStr=e=>JSON.stringify([e.cleared?1:0, e.steps]);
 let msSyncing=false, msPending=false, msLastSeen=JSON.stringify(histMap());
 
 async function msPull(){
-  const r=await fetch(`${MS_SB.url()}/rest/v1/sync?code=eq.${encodeURIComponent(MS_SB.code())}&select=data`,
-    {headers:{apikey:MS_SB.key(),Authorization:"Bearer "+MS_SB.key()}});
+  const r=await fetch(MS_SB.url()+"?code="+encodeURIComponent(MS_SB.code()),{cache:"no-store"});
   if(!r.ok) throw new Error("取得"+r.status);
-  const rows=await r.json();
-  const data=rows[0]&&rows[0].data;
-  if(!data) return {days:{}};
-  if(data.days) return data;                       // 新しい形式
-  // 旧アプリの形式 {today, hist, ts} を、日ごとの形へ変換して読み込む（引っ越し救済）
-  try{
-    const arr=typeof data.hist==="string"?JSON.parse(data.hist||"[]"):(data.hist||[]);
-    const u=Number(data.ts)||Date.now(), days={};
-    arr.forEach(h=>{ if(h&&h.date) days[h.date]={cleared:h.cleared?1:0,steps:h.steps||[],u}; });
-    return {days};
-  }catch(e){ return {days:{}}; }
+  const j=await r.json();
+  if(!j.ok) throw new Error(j.error||"取得できませんでした");
+  return {days:j.days||{}};
 }
 async function msPush(blob){
-  const body=[{code:MS_SB.code(),data:blob,updated_at:new Date().toISOString()}];
-  const r=await fetch(`${MS_SB.url()}/rest/v1/sync?on_conflict=code`,{method:"POST",
-    headers:{apikey:MS_SB.key(),Authorization:"Bearer "+MS_SB.key(),"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},
-    body:JSON.stringify(body)});
+  // Content-Type を text/plain にしておくと、ブラウザの事前確認（preflight）が起きずGASに直接届く
+  const r=await fetch(MS_SB.url(),{method:"POST",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify({code:MS_SB.code(),days:(blob&&blob.days)||{}})});
   if(!r.ok) throw new Error("保存"+r.status);
+  const j=await r.json();
+  if(!j.ok) throw new Error(j.error||"保存できませんでした");
 }
 
 async function msSync(manual){
@@ -428,12 +421,11 @@ async function msSync(manual){
 function msCheck(){ if(msSyncOn() && JSON.stringify(histMap())!==msLastSeen) msSync(false); }
 function msTouch(){ if(msSyncOn()) setTimeout(msCheck,400); }   // saveToday から呼ばれる
 
-function msOpenSync(){ document.getElementById("msUrl").value=MS_SB.url(); document.getElementById("msKey").value=MS_SB.key(); document.getElementById("msCode").value=MS_SB.code(); document.getElementById("msSyncMsg").textContent=""; document.getElementById("msSyncWrap").style.display="flex"; }
+function msOpenSync(){ document.getElementById("msUrl").value=MS_SB.url(); document.getElementById("msCode").value=localStorage.getItem("ms_gas_code")||""; document.getElementById("msSyncMsg").textContent=""; document.getElementById("msSyncWrap").style.display="flex"; }
 function msCloseSync(){ document.getElementById("msSyncWrap").style.display="none"; }
 function msSaveSync(){
-  localStorage.setItem("ms_sb_url",document.getElementById("msUrl").value.trim().replace(/\/$/,""));
-  localStorage.setItem("ms_sb_key",document.getElementById("msKey").value.trim());
-  localStorage.setItem("ms_sb_code",document.getElementById("msCode").value.trim());
+  localStorage.setItem("ms_gas_url",document.getElementById("msUrl").value.trim());
+  localStorage.setItem("ms_gas_code",document.getElementById("msCode").value.trim()||"asa");
   msCloseSync();
   if(msSyncOn()){ msSetStatus("☁️ つなぎました"); msSync(true); } else msSetStatus("この端末に保存中（同期オフ）");
 }
