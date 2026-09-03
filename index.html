@@ -161,10 +161,9 @@
       <div id="steps"></div>
       <div class="row">
         <button class="btn ghost" onclick="resetToday()">リセット</button>
-        <button class="btn decide" id="decideBtn" onclick="saveToday('decide')">決定</button>
         <button class="btn" id="saveBtn" onclick="saveToday()">きろくする</button>
       </div>
-      <div class="hint" id="decideHint">「決定」＝今日の3つを確める（もう一方の端末にも渡る）／「きろくする」＝できたぶんを残す</div>
+      <div class="hint">書いた時点で、もう一方の端末へ自動で渡ります（ボタンを押す必要はありません）</div>
     </div>
   </div>
 
@@ -231,12 +230,17 @@ function render(){
   document.getElementById("bar").style.width=(done/3*100)+"%";
   const all=done===3;
   document.getElementById("banner").classList.toggle("show",all);
-  const allText=state.steps.every(s=>(s.t||"").trim()!=="");
-  document.getElementById("decideBtn").disabled=!allText;   // 3つ書けたら「決定」できる
   document.getElementById("saveBtn").disabled=done===0;     // 1つでもできたら「きろく」できる
   persist();
 }
-function edit(i,v){state.steps[i].t=v; persist();}
+function edit(i,v){state.steps[i].t=v; persist(); autoSave();}
+
+/* 打ち終わってから少し待って保存する（1文字ごとに送らないため） */
+let autoSaveTimer=null;
+function autoSave(){
+  if(autoSaveTimer)clearTimeout(autoSaveTimer);
+  autoSaveTimer=setTimeout(()=>{ autoSaveTimer=null; saveToday("auto"); },1200);
+}
 
 /* 入力欄で Enter：まだ空の欄があればそこへ移り、3つ埋まっていたらそのまま「きろくする」 */
 function stepKey(e,i){
@@ -245,11 +249,11 @@ function stepKey(e,i){
   const ins=document.querySelectorAll("#steps input");
   for(let k=i+1;k<ins.length;k++){ if(!ins[k].value.trim()){ ins[k].focus(); return; } }
   for(let k=0;k<i;k++){ if(!ins[k].value.trim()){ ins[k].focus(); return; } }
-  if(state.steps.every(s=>(s.t||"").trim()!=="")){ e.target.blur(); saveToday("decide"); }
+  if(state.steps.every(s=>(s.t||"").trim()!=="")) e.target.blur();   // 3つ埋まったら閉じる（保存は自動）
 }
 function toggle(i){
   const wasAll=state.steps.filter(s=>s.d).length===3;
-  state.steps[i].d=!state.steps[i].d; render();
+  state.steps[i].d=!state.steps[i].d; render(); autoSave();
   if(!wasAll && state.steps.filter(s=>s.d).length===3) celebrate();
 }
 function celebrate(){
@@ -267,7 +271,7 @@ function celebrate(){
 function resetToday(){
   if(!confirm("今日の3つを消していい？"))return;
   state={date:todayStr(), steps:[{t:"",d:false},{t:"",d:false},{t:"",d:false}]};
-  render();
+  render(); autoSave();
 }
 /* mode="decide" なら「決定」、それ以外は「きろくする」。
    どちらもその日の1行として棚（スプレッドシート）へ上がるので、もう一方の端末に渡る。 */
@@ -279,10 +283,9 @@ function saveToday(mode){
   const idx=hist.findIndex(h=>h.date===state.date);
   if(idx>=0)hist[idx]=entry; else hist.push(entry);
   localStorage.setItem(KEY_HIST,JSON.stringify(hist)); if(typeof msTouch==='function') msTouch();
-  const decide=(mode==="decide");
-  const b=document.getElementById(decide?"decideBtn":"saveBtn");
-  const label=decide?"決定":"きろくする";
-  b.textContent=decide?"✓ 決定！":"✓ きろくした！"; setTimeout(()=>b.textContent=label,1400);
+  if(mode==="auto") return;                       // 自動保存のときは静かに
+  const b=document.getElementById("saveBtn");
+  b.textContent="✓ きろくした！"; setTimeout(()=>b.textContent="きろくする",1400);
 }
 function goApp(e,url){ e.preventDefault(); if(window.sfxWarp)window.sfxWarp(); setTimeout(()=>location.href=url,280); return false; }
 function switchTab(t){
@@ -410,12 +413,14 @@ async function msSync(manual){
 
     const remote=await msPull(), rdays=remote.days||{};
     // 日ごとに新しい方を残す（消える心配なし＝履歴は上書き/追加のみ）
-    const merged={}, mu={};
+    const merged={}, mu={}; let adoptToday=null;
     new Set([...Object.keys(cur),...Object.keys(rdays)]).forEach(d=>{
       const lu=u[d]||0, ru=(rdays[d]&&rdays[d].u)||0;
-      if(rdays[d] && ru>lu){ merged[d]={cleared:!!rdays[d].cleared,steps:rdays[d].steps||[]}; mu[d]=ru; }
+      if(rdays[d] && ru>lu){ merged[d]={cleared:!!rdays[d].cleared,steps:rdays[d].steps||[]}; mu[d]=ru;
+                             if(d===todayStr()) adoptToday=merged[d]; }
       else if(cur[d]){ merged[d]=cur[d]; mu[d]=lu||t; }
-      else if(rdays[d]){ merged[d]={cleared:!!rdays[d].cleared,steps:rdays[d].steps||[]}; mu[d]=ru; }
+      else if(rdays[d]){ merged[d]={cleared:!!rdays[d].cleared,steps:rdays[d].steps||[]}; mu[d]=ru;
+                         if(d===todayStr()) adoptToday=merged[d]; }
     });
 
     // 手元へ反映
@@ -423,11 +428,12 @@ async function msSync(manual){
     localStorage.setItem(KEY_HIST,JSON.stringify(arr));
     jset("asa_day_u",mu);
 
-    // 今日ぶんが向こうから来ていて、こちらがまだ空っぽなら、そのまま「きょう」に入れる
+    // 向こうの今日ぶんの方が新しければ、「きょう」の欄もそれに入れ替える
     try{
-      const td=todayStr(), inc=merged[td];
-      if(inc && state && state.date===td && state.steps.every(s=>!(s.t||"").trim() && !s.d)){
-        const st=(inc.steps||[]).slice(0,3).map(x=>({t:x.t||"",d:!!x.d}));
+      const td=todayStr();
+      const typing=document.activeElement && document.activeElement.closest && document.activeElement.closest("#steps");
+      if(adoptToday && state && state.date===td && !typing && !autoSaveTimer){
+        const st=(adoptToday.steps||[]).slice(0,3).map(x=>({t:x.t||"",d:!!x.d}));
         while(st.length<3) st.push({t:"",d:false});
         state={date:td, steps:st};
         render();
@@ -501,7 +507,7 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 setInterval(()=>{ if(document.visibilityState==="visible"&&msSyncOn()&&navigator.onLine) msSync(false); },15000); // 相手の変化を取りに行く
 
 /* ---- 直したコードをiPhoneへ確実に届ける（版照合で自動reload） ---- */
-const APP_VERSION="2026-09-03-decide";
+const APP_VERSION="2026-09-03-auto";
 (function(){ const e=document.createElement("div"); e.textContent="v"+APP_VERSION;
   e.style.cssText="text-align:center;color:#3a3550;font-size:10px;padding:16px 0 26px;letter-spacing:.05em";
   document.body.appendChild(e); })();
