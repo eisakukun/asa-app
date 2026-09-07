@@ -267,6 +267,8 @@ function autoSave(){
 /* 入力欄で Enter：まだ空の欄があればそこへ移り、3つ埋まっていたらそのまま「きろくする」 */
 function stepKey(e,i){
   if(e.key!=="Enter" && e.keyCode!==13) return;
+  // 日本語変換中のEnterは「変換の確定」。ここで横取りすると確定した文字が次の欄へ複製される。
+  if(e.isComposing || e.keyCode===229 || imeOn) return;
   e.preventDefault();
   const ins=document.querySelectorAll("#steps input");
   for(let k=i+1;k<ins.length;k++){ if(!ins[k].value.trim()){ ins[k].focus(); return; } }
@@ -529,7 +531,7 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
 setInterval(()=>{ if(document.visibilityState==="visible"&&msSyncOn()&&navigator.onLine) msSync(false); },15000); // 相手の変化を取りに行く
 
 /* ---- 直したコードをiPhoneへ確実に届ける（版照合で自動reload） ---- */
-const APP_VERSION="2026-09-07-caret";
+const APP_VERSION="2026-09-08-ime";
 (function(){ const e=document.createElement("div"); e.textContent="v"+APP_VERSION;
   e.style.cssText="text-align:center;color:#3a3550;font-size:10px;padding:16px 0 26px;letter-spacing:.05em";
   document.body.appendChild(e); })();
