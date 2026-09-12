@@ -574,6 +574,7 @@
         <button class="btn ghost small" onclick="carrySkip()">引き継がない</button>
         <button class="btn small" onclick="carryImport()">選んだのを 入れる</button>
       </div>
+      <button class="btn ghost small" style="margin-top:8px;" onclick="carryPeek()">📝 その日を ひらいて チェックする</button>
       <div class="hint" style="margin-top:8px;">※ 前の日の きろくは <b>そのまま</b>。ここで何をしても 書きかわらないよ</div>
     </div>
   </div>
@@ -627,28 +628,50 @@ let visibilityHidden = localStorage.getItem("td_vis_hidden") === "true";
 if(!localStorage.getItem("td_reward_init")){ if(loadReward()===100) saveReward(1500); localStorage.setItem("td_reward_init","1"); }
 function todayEntry(){if(!days[todayStr()]) days[todayStr()]={items:[{t:"",d:false}]}; return days[todayStr()];}
 function persist(){saveDays(days);}
-/* 表示中の日（きょう or きのう）。編集できるのは1日前まで */
+/* 表示中の日。◀ は「中身のある前の日」まで さかのぼれる（空の日は とばす） */
 function shiftDate(str,n){const d=new Date(str+"T00:00"); d.setDate(d.getDate()+n); return ymd(d);}
 let viewDate=todayStr();
-function isEditableDate(str){return str===todayStr()||str===shiftDate(todayStr(),-1);}
+/* 中身のある日か？（やること名が入ってる or チェック済み） */
+function hasRec(e){ return !!(e && e.items && e.items.some(i=>(i.t&&i.t.trim())||i.d||(i.subs&&i.subs.length))); }
+function prevRecDay(from){ return Object.keys(days).filter(k=>k<from && hasRec(days[k])).sort().pop() || null; }
+function nextRecDay(from){ return Object.keys(days).filter(k=>k>from && k<=todayStr() && hasRec(days[k])).sort()[0] || null; }
+function prevTarget(){ return prevRecDay(viewDate) || (viewDate===todayStr()? shiftDate(todayStr(),-1) : null); }
+function nextTarget(){ return viewDate>=todayStr()? null : (nextRecDay(viewDate) || todayStr()); }
 function curEntry(){if(!days[viewDate]) days[viewDate]={items:[{t:"",d:false}]}; return days[viewDate];}
-function goDay(n){
-  const nd=shiftDate(viewDate,n);
-  if(nd>todayStr()||!isEditableDate(nd))return;
-  // Clear isNew flags when switching days
+function clearNewFlags(){
   Object.values(days).forEach(entry => {
     if(entry.items) {
       entry.items.forEach(it => { delete it.isNew; if(it.subs && !subsUsed(it)){ delete it.subs; delete it.collapsed; } });
     }
   });
+}
+function goDay(n){
+  const nd = n<0 ? prevTarget() : nextTarget();
+  if(!nd || nd>todayStr()) return;
+  clearNewFlags();
   viewDate=nd;
   renderItems();
 }
+/* 引き継ぎ元の日など、任意の日へ飛ぶ */
+function jumpToDay(key){
+  if(!key || key>todayStr()) return;
+  clearNewFlags();
+  viewDate=key;
+  switchTab("today");
+  document.querySelector(".daynav").scrollIntoView({behavior:"smooth", block:"center"});
+}
+function daysAgoLabel(str){
+  const diff=Math.round((new Date(todayStr()+"T00:00") - new Date(str+"T00:00"))/86400000);
+  return diff===0?"きょう":diff===1?"きのう":diff===2?"おととい":diff+"日前";
+}
 function updateDayNav(){
   const prev=document.getElementById("prevDay"), next=document.getElementById("nextDay"), lab=document.getElementById("dayLabel");
-  prev.disabled=!isEditableDate(shiftDate(viewDate,-1));
-  next.disabled=(viewDate>=todayStr());
-  lab.textContent = viewDate===todayStr() ? "きょう" : (viewDate===shiftDate(todayStr(),-1) ? "きのう" : viewDate);
+  const pt=prevTarget(), nt=nextTarget();
+  prev.disabled=!pt;
+  next.disabled=!nt;
+  prev.textContent = pt ? "◀ "+daysAgoLabel(pt) : "◀ これより前は なし";
+  next.textContent = nt ? daysAgoLabel(nt)+" ▶" : "きょう ▶";
+  lab.textContent = daysAgoLabel(viewDate) + (hasRec(days[viewDate])?"":"（記録なし）");
 }
 /* 小分け対応：サブがあれば「完了サブ数 / 全サブ数」の小数、無ければ 1 or 0 */
 function itemFrac(it){ if(it.subs && it.subs.length){ return it.subs.filter(s=>s.d).length/it.subs.length; } return it.d?1:0; }
@@ -954,7 +977,7 @@ function renderCal(){
   let achDays=0, recDays=0, mMoney=0;
   for(let d=1; d<=dim; d++){
     const key=ymd(new Date(y,m,d));
-    const e=days[key];
+    const e=hasRec(days[key]) ? days[key] : null;
     let cls="cell", inner=`${d}`;
     if(e){
       recDays++;
@@ -976,8 +999,9 @@ function calMove(n){calDate.setMonth(calDate.getMonth()+n); renderCal();}
 function showDay(key){
   const e=days[key], box=document.getElementById("daydetail");
   box.classList.remove("hidden");
-  if(!e){box.innerHTML=`<b>${niceDate(key)}</b><div class="s">記録なし</div>`; return;}
+  if(!hasRec(e)){box.innerHTML=`<b>${niceDate(key)}</b><div class="s">記録なし</div>`; return;}
   box.innerHTML=`<b>${niceDate(key)}</b> ${isAchieved(e)?"🏆":""} ／ ${yen(moneyForDay(e))}`+
+    `<button class="btn ghost small" style="margin:8px 0 4px;" onclick="jumpToDay('${key}')">📝 この日をひらいて チェックする</button>`+
     e.items.filter(i=>i.t||i.d).map(i=>{
       const locName = formatLoc(i.l);
       const locBadge = i.l ? `<span style="color:var(--yellow);font-size:11px;margin-left:6px;">📍${locName}</span>` : "";
@@ -1064,6 +1088,11 @@ function carryImport(){
   showBanner("🌙 引き継ぎ", add.length ? add.length+" 個を きょうに 入れたよ（"+niceDate(carryKey)+" は そのまま）" : "入れるものが なかったよ");
 }
 function carrySkip(){ carryDone(); }
+/* 引き継ぎ元の日を そのまま ひらく（チェックを 付けに行く） */
+function carryPeek(){
+  document.getElementById("carrywrap").classList.add("hidden");   // 旗は立てない（また 🌙 ボタンで 開ける）
+  jumpToDay(carryKey);
+}
 function carryDone(){
   localStorage.setItem("td_carry_"+todayStr(),"1");
   document.getElementById("carrywrap").classList.add("hidden");
