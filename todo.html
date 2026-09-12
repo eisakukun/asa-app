@@ -566,13 +566,15 @@
   <!-- きのうの引き継ぎ -->
   <div class="syncwrap hidden" id="carrywrap">
     <div class="syncbox">
-      <div class="cardtitle">🌙 きのうの続き</div>
-      <div class="hint" style="margin-bottom:10px;">できてなかったこと、今日に引き継ぐ？<br>入れたいものを<b>タップで選んで</b>ね（✓＝入れる）</div>
+      <div class="cardtitle">🌙 きのう、できたのはどれ？</div>
+      <div class="hint" id="carryDateLbl" style="margin-bottom:6px;color:var(--yellow);"></div>
+      <div class="hint" style="margin-bottom:10px;">ぜんぶ <b>空欄</b> から はじまるよ。<br><b>できた やつだけ タップ</b>してね（✓＝きのう できた）<br>✓ が ついてないのは そのまま <b>きょうに 引き継ぐ</b>。</div>
       <div id="carryList"></div>
       <div class="row" style="margin-top:12px;">
         <button class="btn ghost small" onclick="carrySkip()">引き継がない</button>
-        <button class="btn small" onclick="carryImport()">選んだのを入れる</button>
+        <button class="btn small" onclick="carryImport()">きろくして 引き継ぐ</button>
       </div>
+      <div class="hint" style="margin-top:8px;">※「引き継がない」でも、✓ したやつは きのうの きろくに のこるよ</div>
     </div>
   </div>
 
@@ -1005,11 +1007,11 @@ renderItems();
 booting=false;   // ここから先のデータ変更だけ「更新」として記録する
 
 /* ================= きのうの引き継ぎ ================= */
-let carryData=[];
+let carryData=[], carryKey="";
 function collectCarry(refDate){
   const prevKeys=Object.keys(days).filter(k=>k<refDate).sort().reverse();
   for(const k of prevKeys){
-    const und=days[k].items.filter(i=>i.t && !i.d);
+    const und=days[k].items.filter(i=>i.t && itemFrac(i)<1);
     if(und.length) return {key:k, undone:und};
   }
   return null;
@@ -1019,17 +1021,33 @@ function checkCarryOver(){                                // 日が変わった�
   if(localStorage.getItem(flag)) return;                 // 今日はもう聞いた
   const info=collectCarry(todayStr());
   if(!info) return;                                      // 引き継ぐものなし
-  openCarryModal(info.undone);
+  openCarryModal(info);
 }
 function openCarry(){                                     // 手動ボタン
   const info=collectCarry(viewDate);
   if(!info){ showBanner("🌙 引き継ぎ","前回できなかったことは無いよ✨"); return; }
-  openCarryModal(info.undone);
+  openCarryModal(info);
 }
-function openCarryModal(undone){
-  carryData=undone.map(i=>({t:i.t, l:i.l||"", h:i.h||"", sel:true}));
+function openCarryModal(info){
+  carryKey=info.key;
+  // ✓ は「きのう できた」の印。ぜんぶ空欄から はじめる
+  carryData=info.undone.map(i=>({t:i.t, l:i.l||"", h:i.h||"", sel:false, ref:i}));
+  const lbl=document.getElementById("carryDateLbl");
+  if(lbl) lbl.textContent = niceDate(carryKey) + " の やりのこし";
   renderCarry();
   document.getElementById("carrywrap").classList.remove("hidden");
+}
+/* ✓ を つけたものを その日の「できた」として きろくする */
+function carryApplyChecks(){
+  let n=0;
+  carryData.forEach(c=>{
+    if(!c.sel || !c.ref) return;
+    c.ref.d=true;
+    if(c.ref.subs && c.ref.subs.length) c.ref.subs.forEach(s=>s.d=true);
+    n++;
+  });
+  if(n) persist();
+  return n;
 }
 function renderCarry(){
   const box=document.getElementById("carryList"); box.innerHTML="";
@@ -1046,14 +1064,23 @@ function renderCarry(){
 }
 function carryToggle(i){ carryData[i].sel=!carryData[i].sel; renderCarry(); }
 function carryImport(){
+  const done=carryApplyChecks();                          // ✓＝きのう できた → きのうに きろく
   const e=curEntry();
   e.items=e.items.filter(i=>i.t||i.d);                   // 空の行を消す
-  carryData.filter(c=>c.sel).forEach(c=>e.items.push({t:c.t,l:c.l||"",h:c.h||"",d:false}));
+  const have=new Set(e.items.map(i=>(i.t||"").trim()).filter(Boolean));
+  const rest=carryData.filter(c=>!c.sel && !have.has((c.t||"").trim()));  // ✓ なし＝まだ → きょうへ（同じ名前は入れない）
+  rest.forEach(c=>e.items.push({t:c.t,l:c.l||"",h:c.h||"",d:false}));
   if(!e.items.length)e.items.push({t:"",d:false});
   renderItems();
   carryDone();
+  showBanner("🌙 きのうの分","できた "+done+" 個を きろく／ "+rest.length+" 個を きょうへ");
 }
-function carrySkip(){ carryDone(); }
+function carrySkip(){
+  const done=carryApplyChecks();                          // 引き継がなくても ✓ は きろくする
+  renderItems();
+  carryDone();
+  if(done) showBanner("🌙 きのうの分","できた "+done+" 個を きろくしたよ");
+}
 function carryDone(){
   localStorage.setItem("td_carry_"+todayStr(),"1");
   document.getElementById("carrywrap").classList.add("hidden");
