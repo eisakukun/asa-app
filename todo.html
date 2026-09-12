@@ -566,15 +566,15 @@
   <!-- きのうの引き継ぎ -->
   <div class="syncwrap hidden" id="carrywrap">
     <div class="syncbox">
-      <div class="cardtitle">🌙 きのう、できたのはどれ？</div>
+      <div class="cardtitle">🌙 きょうに 引き継ぐ？</div>
       <div class="hint" id="carryDateLbl" style="margin-bottom:6px;color:var(--yellow);"></div>
-      <div class="hint" style="margin-bottom:10px;">ぜんぶ <b>空欄</b> から はじまるよ。<br><b>できた やつだけ タップ</b>してね（✓＝きのう できた）<br>✓ が ついてないのは そのまま <b>きょうに 引き継ぐ</b>。</div>
+      <div class="hint" style="margin-bottom:10px;">ぜんぶ <b>空欄</b> から はじまるよ。<br>きょうに <b>持っていくやつだけ タップ</b>してね（✓＝きょうに入れる）</div>
       <div id="carryList"></div>
       <div class="row" style="margin-top:12px;">
         <button class="btn ghost small" onclick="carrySkip()">引き継がない</button>
-        <button class="btn small" onclick="carryImport()">きろくして 引き継ぐ</button>
+        <button class="btn small" onclick="carryImport()">選んだのを 入れる</button>
       </div>
-      <div class="hint" style="margin-top:8px;">※「引き継がない」でも、✓ したやつは きのうの きろくに のこるよ</div>
+      <div class="hint" style="margin-top:8px;">※ 前の日の きろくは <b>そのまま</b>。ここで何をしても 書きかわらないよ</div>
     </div>
   </div>
 
@@ -1030,24 +1030,12 @@ function openCarry(){                                     // 手動ボタン
 }
 function openCarryModal(info){
   carryKey=info.key;
-  // ✓ は「きのう できた」の印。ぜんぶ空欄から はじめる
-  carryData=info.undone.map(i=>({t:i.t, l:i.l||"", h:i.h||"", sel:false, ref:i}));
+  // ✓ は「きょうに 引き継ぐ」の印。ぜんぶ空欄から はじめる（元の日には いっさい さわらない）
+  carryData=info.undone.map(i=>({t:i.t, l:i.l||"", h:i.h||"", sel:false}));
   const lbl=document.getElementById("carryDateLbl");
   if(lbl) lbl.textContent = niceDate(carryKey) + " の やりのこし";
   renderCarry();
   document.getElementById("carrywrap").classList.remove("hidden");
-}
-/* ✓ を つけたものを その日の「できた」として きろくする */
-function carryApplyChecks(){
-  let n=0;
-  carryData.forEach(c=>{
-    if(!c.sel || !c.ref) return;
-    c.ref.d=true;
-    if(c.ref.subs && c.ref.subs.length) c.ref.subs.forEach(s=>s.d=true);
-    n++;
-  });
-  if(n) persist();
-  return n;
 }
 function renderCarry(){
   const box=document.getElementById("carryList"); box.innerHTML="";
@@ -1064,23 +1052,18 @@ function renderCarry(){
 }
 function carryToggle(i){ carryData[i].sel=!carryData[i].sel; renderCarry(); }
 function carryImport(){
-  const done=carryApplyChecks();                          // ✓＝きのう できた → きのうに きろく
-  const e=curEntry();
+  // 引き継ぎ先は かならず「きょう」。前の日の きろくは いっさい 書きかえない
+  const e=todayEntry();
   e.items=e.items.filter(i=>i.t||i.d);                   // 空の行を消す
   const have=new Set(e.items.map(i=>(i.t||"").trim()).filter(Boolean));
-  const rest=carryData.filter(c=>!c.sel && !have.has((c.t||"").trim()));  // ✓ なし＝まだ → きょうへ（同じ名前は入れない）
-  rest.forEach(c=>e.items.push({t:c.t,l:c.l||"",h:c.h||"",d:false}));
+  const add=carryData.filter(c=>c.sel && !have.has((c.t||"").trim()));   // 同じ名前は 二重に入れない
+  add.forEach(c=>e.items.push({t:c.t,l:c.l||"",h:c.h||"",d:false}));
   if(!e.items.length)e.items.push({t:"",d:false});
   renderItems();
   carryDone();
-  showBanner("🌙 きのうの分","できた "+done+" 個を きろく／ "+rest.length+" 個を きょうへ");
+  showBanner("🌙 引き継ぎ", add.length ? add.length+" 個を きょうに 入れたよ（"+niceDate(carryKey)+" は そのまま）" : "入れるものが なかったよ");
 }
-function carrySkip(){
-  const done=carryApplyChecks();                          // 引き継がなくても ✓ は きろくする
-  renderItems();
-  carryDone();
-  if(done) showBanner("🌙 きのうの分","できた "+done+" 個を きろくしたよ");
-}
+function carrySkip(){ carryDone(); }
 function carryDone(){
   localStorage.setItem("td_carry_"+todayStr(),"1");
   document.getElementById("carrywrap").classList.add("hidden");
