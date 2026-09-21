@@ -435,6 +435,29 @@
   #timeCalcCard .tc-need{ font-size:26px; font-weight:900; color:var(--green); text-shadow:0 0 12px rgba(57,255,20,.8); margin:0 3px; vertical-align:-2px; }
   #timeCalcCard .tcsum{ margin-top:6px; color:var(--sub); }
   #timeCalcCard .tclist{ margin-top:10px; padding-top:10px; border-top:1px solid rgba(138,127,192,.3); font-size:12px; color:var(--sub); }
+  /* ちかいうち（3日〜1週間） */
+  .soonadd{display:flex; gap:8px; margin-bottom:10px;}
+  .soonadd input{flex:1; min-width:0; padding:12px; border-radius:5px; border:1px solid var(--line);
+    background:var(--panel2); color:var(--text); font-size:16px; outline:none; font-family:inherit;}
+  .soonadd button{flex:none; padding:0 16px; border:1px solid var(--magenta); border-radius:5px; background:transparent;
+    color:#fff; font-weight:800; font-family:inherit; cursor:pointer; text-shadow:0 0 6px var(--magenta);}
+  .spans{display:flex; gap:8px; margin-bottom:14px;}
+  .spanbtn{flex:1; padding:9px; border:1px solid var(--line); border-radius:20px; background:transparent;
+    color:var(--sub); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer;}
+  .spanbtn.on{border-color:var(--cyan); color:var(--cyan); text-shadow:0 0 6px var(--cyan); box-shadow:0 0 8px rgba(0,240,255,.3);}
+  .soongroup{font-size:12px; color:var(--sub); letter-spacing:1px; margin:14px 0 8px;}
+  .soongroup b{color:var(--cyan);}
+  .soonbody{flex:1; min-width:0; display:flex; flex-direction:column;}
+  .soonbody input.txt{padding:10px 4px 4px;}
+  .soonmeta{display:flex; align-items:center; gap:10px; padding:0 4px 8px;}
+  #tabSoon{position:relative;}
+  #soonCount:not(:empty){position:absolute; top:-7px; right:-5px; min-width:20px; height:20px; padding:0 5px; border-radius:10px;
+    background:var(--cyan); color:#03121a; font-size:11px; line-height:20px; letter-spacing:0; text-shadow:none; box-shadow:0 0 8px var(--cyan);}
+  .item .left{flex:none; font-size:11px; color:var(--cyan); white-space:nowrap; letter-spacing:0;}
+  .item .left.late{color:var(--magenta); text-shadow:0 0 6px rgba(255,45,149,.6);}
+  .item .totoday{flex:none; background:transparent; border:1px solid rgba(57,255,20,.45); color:var(--green);
+    border-radius:4px; font-size:11px; padding:6px 7px; cursor:pointer; font-family:inherit; white-space:nowrap;}
+  .item .totoday.in{border-color:transparent; color:var(--sub); cursor:default;}
 </style>
 </head>
 <body>
@@ -452,6 +475,7 @@
 
   <div class="tabs">
     <button class="tab active" id="tabToday" onclick="switchTab('today')">きょう</button>
+    <button class="tab" id="tabSoon" onclick="switchTab('soon')">ちかいうち<span id="soonCount"></span></button>
     <button class="tab" id="tabCal" onclick="switchTab('cal')">カレンダー</button>
   </div>
 
@@ -509,6 +533,22 @@
         <button id="hideInfoBtn" class="btn ghost small" onclick="toggleVisibilityMode()" style="flex:none; width:auto; padding:10px 14px;"></button>
       </div>
       <button class="btn carry" onclick="openCarry()">🌙 前回できなかったことを引き継ぐ</button>
+    </div>
+  </div>
+
+  <div id="viewSoon" class="hidden">
+    <div class="card">
+      <div class="cardtitle">🗓 ちかいうちに やりたいこと</div>
+      <div class="hint" style="margin:-4px 0 12px;">きょう じゃなくていい。3日か1週間のうちに やれたらいいこと。</div>
+      <div class="soonadd">
+        <input id="soonInput" placeholder="やりたいことを書く" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)addSoon()">
+        <button onclick="addSoon()">＋</button>
+      </div>
+      <div class="spans">
+        <button class="spanbtn on" id="span3" onclick="pickSpan(3)">3日以内</button>
+        <button class="spanbtn" id="span7" onclick="pickSpan(7)">1週間以内</button>
+      </div>
+      <div id="soonList"></div>
     </div>
   </div>
 
@@ -617,6 +657,9 @@ function saveGoal(g){localStorage.setItem(K_GOAL,String(g)); touch();}
 function loadReward(){const r=localStorage.getItem(K_REWARD); return r===null?1500:Number(r);}
 function saveReward(r){localStorage.setItem(K_REWARD,String(r)); touch();}
 let days=loadDays();
+const K_SOON="td_soon";
+function loadSoon(){try{return JSON.parse(localStorage.getItem(K_SOON)||"[]");}catch(e){return [];}}
+function saveSoon(a){localStorage.setItem(K_SOON,JSON.stringify(a)); touch();}
 // Clear isNew flags at boot
 Object.values(days).forEach(entry => {
   if(entry.items) {
@@ -1013,7 +1056,7 @@ function showDay(key){
 /* ---- tabs ---- */
 function goApp(e,url){ e.preventDefault(); if(window.sfxWarp)window.sfxWarp(); setTimeout(()=>location.href=url,280); return false; }
 function switchTab(t){
-  const today=t==="today";
+  const today=t==="today", soon=t==="soon", cal=t==="cal";
   // Clear isNew flags when switching tabs
   Object.values(days).forEach(entry => {
     if(entry.items) {
@@ -1021,11 +1064,59 @@ function switchTab(t){
     }
   });
   document.getElementById("viewToday").classList.toggle("hidden",!today);
-  document.getElementById("viewCal").classList.toggle("hidden",today);
+  document.getElementById("viewSoon").classList.toggle("hidden",!soon);
+  document.getElementById("viewCal").classList.toggle("hidden",!cal);
   document.getElementById("tabToday").classList.toggle("active",today);
-  document.getElementById("tabCal").classList.toggle("active",!today);
-  if(today){renderGoalPanel(); renderItems();} else {renderCal();}
+  document.getElementById("tabSoon").classList.toggle("active",soon);
+  document.getElementById("tabCal").classList.toggle("active",cal);
+  if(today){renderGoalPanel(); renderItems();} else if(soon){renderSoon();} else {renderCal();}
 }
+
+/* ================= ちかいうち（3日／1週間） ================= */
+let soonSpan=3;
+function pickSpan(n){ soonSpan=n; document.getElementById("span3").classList.toggle("on",n===3); document.getElementById("span7").classList.toggle("on",n===7); }
+function soonLeft(it){ const end=shiftDate(it.from,it.span); return Math.round((new Date(end+"T00:00")-new Date(todayStr()+"T00:00"))/86400000); }
+function soonLeftLabel(it){ const n=soonLeft(it); return n>1?`あと${n}日`:n===1?"あした まで":n===0?"きょう まで":"期限すぎ"; }
+function inToday(it){ const e=days[todayStr()]; return !!(e&&e.items&&e.items.some(x=>x.soonId===it.id)); }
+function renderSoonCount(){ const n=loadSoon().filter(x=>!x.d).length; document.getElementById("soonCount").textContent=n?String(n):""; }
+function renderSoon(){
+  const a=loadSoon(); renderSoonCount();
+  const row=it=>{ const i=a.indexOf(it), late=soonLeft(it)<0, inT=inToday(it);
+    return `<div class="item${it.d?' done':''}">
+      <button class="check" onclick="toggleSoon(${i})">✓</button>
+      <div class="soonbody">
+        <input class="txt" value="${_escH(it.t).replace(/"/g,'&quot;')}" oninput="editSoon(${i},this.value)">
+        ${it.d?'':`<div class="soonmeta"><span class="left${late?' late':''}">${soonLeftLabel(it)}</span>
+        ${inT?`<span class="totoday in">📌 きょうに入れた</span>`:`<button class="totoday" onclick="soonToToday(${i})">→ きょうに入れる</button>`}</div>`}
+      </div>
+      <button class="del" onclick="delSoon(${i})">×</button></div>`; };
+  const open=a.filter(x=>!x.d).sort((x,y)=>soonLeft(x)-soonLeft(y));
+  const g3=open.filter(x=>x.span===3), g7=open.filter(x=>x.span!==3), done=a.filter(x=>x.d);
+  let h="";
+  if(!a.length) h=`<div class="hint" style="text-align:center;padding:14px 0;">まだ なにもないよ</div>`;
+  if(g3.length) h+=`<div class="soongroup">▼ <b>3日以内</b></div>`+g3.map(row).join("");
+  if(g7.length) h+=`<div class="soongroup">▼ <b>1週間以内</b></div>`+g7.map(row).join("");
+  if(done.length) h+=`<div class="soongroup">▼ できた（${done.length}）</div>`+done.map(row).join("")+
+    `<button class="btn carry" onclick="clearSoonDone()">🧹 できたのを片づける</button>`;
+  document.getElementById("soonList").innerHTML=h;
+}
+function addSoon(){
+  const inp=document.getElementById("soonInput"), t=inp.value.trim(); if(!t) return;
+  const a=loadSoon(); a.push({id:Date.now().toString(36),t,span:soonSpan,from:todayStr(),d:false}); saveSoon(a);
+  inp.value=""; renderSoon(); inp.focus();
+}
+function editSoon(i,v){ const a=loadSoon(); a[i].t=v; saveSoon(a); }
+function toggleSoon(i){ const a=loadSoon(); a[i].d=!a[i].d; if(a[i].d){a[i].doneAt=todayStr(); if(window.sfxCheck)window.sfxCheck();} else delete a[i].doneAt; saveSoon(a); renderSoon(); }
+function delSoon(i){ const a=loadSoon(); if(a[i].t.trim() && !confirm(`「${a[i].t}」を消す？`)) return; a.splice(i,1); saveSoon(a); renderSoon(); }
+function clearSoonDone(){ saveSoon(loadSoon().filter(x=>!x.d)); renderSoon(); }
+function soonToToday(i){                                  // きょうのリストに1個コピーする（ちかいうち側はそのまま残る）
+  const it=loadSoon()[i], e=todayEntry();
+  const blank=e.items.findIndex(x=>!(x.t&&x.t.trim())&&!x.d&&!x.subs);
+  const ni={t:it.t,d:false,soonId:it.id};
+  if(blank>=0) e.items[blank]=ni; else e.items.push(ni);
+  persist(); renderSoon();
+}
+renderSoonCount();
 renderGoalPanel();
 renderItems();
 booting=false;   // ここから先のデータ変更だけ「更新」として記録する
@@ -1104,14 +1195,16 @@ const SB={url:()=>localStorage.getItem("sb_url")||"", key:()=>localStorage.getIt
 function syncOn(){return SB.url()&&SB.key()&&SB.code();}
 function localTs(){return Number(localStorage.getItem("td_ts")||0);}
 function setStatus(t){const s=document.getElementById("syncStatus"); if(s)s.textContent=t;}
-function snapshot(){return {days:loadDays(),tiers:loadTiers(),goal:loadGoal(),reward:loadReward(),ts:localTs()};}
+function snapshot(){return {days:loadDays(),tiers:loadTiers(),goal:loadGoal(),reward:loadReward(),soon:loadSoon(),ts:localTs()};}
 function applySnapshot(s){
   applyingRemote=true;
   if(s.days)localStorage.setItem(K_DAYS,JSON.stringify(s.days));
   if(s.tiers)localStorage.setItem(K_TIERS,JSON.stringify(s.tiers));
   if(s.goal!=null)localStorage.setItem(K_GOAL,String(s.goal));
   if(s.reward!=null)localStorage.setItem(K_REWARD,String(s.reward));
+  if(s.soon)localStorage.setItem(K_SOON,JSON.stringify(s.soon));
   days=loadDays();
+  renderSoonCount(); if(!document.getElementById("viewSoon").classList.contains("hidden")) renderSoon();
   renderGoalPanel();
   if(!document.getElementById("viewToday").classList.contains("hidden")) renderItems();
   if(!document.getElementById("viewCal").classList.contains("hidden")) renderCal();
@@ -1166,7 +1259,8 @@ function exportBackup(){
     td_days: localStorage.getItem("td_days"),
     td_tiers: localStorage.getItem("td_tiers"),
     td_goal: localStorage.getItem("td_goal"),
-    td_reward: localStorage.getItem("td_reward") };
+    td_reward: localStorage.getItem("td_reward"),
+    td_soon: localStorage.getItem("td_soon") };
   let dayCount=0; try{ dayCount=Object.keys(JSON.parse(data.td_days||"{}")).length; }catch(e){}
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob), a=document.createElement("a");
@@ -1191,6 +1285,7 @@ async function importBackup(input){
       if(data.td_tiers!=null) localStorage.setItem("td_tiers",data.td_tiers);
       if(data.td_goal!=null) localStorage.setItem("td_goal",String(data.td_goal));
       if(data.td_reward!=null) localStorage.setItem("td_reward",String(data.td_reward));
+      if(data.td_soon!=null) localStorage.setItem("td_soon",data.td_soon);
       localStorage.setItem("td_ts",String(Date.now())); // 復元データを最新扱いに（クラウドで上書きされないように）
       input.value="";
       if(typeof syncOn==="function" && syncOn()){ try{ await pushNow(); }catch(e){} } // クラウドにも復元データを反映
