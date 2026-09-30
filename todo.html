@@ -532,7 +532,7 @@
         <button class="btn ghost small" onclick="addItem()" style="flex:1;">＋ やること追加</button>
         <button id="hideInfoBtn" class="btn ghost small" onclick="toggleVisibilityMode()" style="flex:none; width:auto; padding:10px 14px;"></button>
       </div>
-      <button class="btn carry" onclick="openCarry()">🌙 前回できなかったことを引き継ぐ</button>
+      <button class="btn carry" onclick="openCarry()">🌙 きのう できなかったことを 引き継ぐ</button>
     </div>
   </div>
 
@@ -545,8 +545,8 @@
         <button onclick="addSoon()">＋</button>
       </div>
       <div class="spans">
-        <button class="spanbtn on" id="span3" onclick="pickSpan(3)">3日以内</button>
-        <button class="spanbtn" id="span7" onclick="pickSpan(7)">1週間以内</button>
+        <button class="spanbtn" id="span3" onclick="pickSpan(3)">3日以内</button>
+        <button class="spanbtn on" id="span7" onclick="pickSpan(7)">1週間以内</button>
       </div>
       <div id="soonList"></div>
     </div>
@@ -606,7 +606,7 @@
   <!-- きのうの引き継ぎ -->
   <div class="syncwrap hidden" id="carrywrap">
     <div class="syncbox">
-      <div class="cardtitle">🌙 きょうに 引き継ぐ？</div>
+      <div class="cardtitle">🌙 きのうから 引き継ぐ？</div>
       <div class="hint" id="carryDateLbl" style="margin-bottom:6px;color:var(--yellow);"></div>
       <div class="hint" style="margin-bottom:10px;">ぜんぶ <b>空欄</b> から はじまるよ。<br>きょうに <b>持っていくやつだけ タップ</b>してね（✓＝きょうに入れる）</div>
       <div id="carryList"></div>
@@ -1073,7 +1073,7 @@ function switchTab(t){
 }
 
 /* ================= ちかいうち（3日／1週間） ================= */
-let soonSpan=3;
+let soonSpan=7;   // 何も えらばずに 書いたときは「1週間以内」（3日は 早すぎるので）
 function pickSpan(n){ soonSpan=n; document.getElementById("span3").classList.toggle("on",n===3); document.getElementById("span7").classList.toggle("on",n===7); }
 function soonLeft(it){ const end=shiftDate(it.from,it.span); return Math.round((new Date(end+"T00:00")-new Date(todayStr()+"T00:00"))/86400000); }
 function soonLeftLabel(it){ const n=soonLeft(it); return n>1?`あと${n}日`:n===1?"あした まで":n===0?"きょう まで":"期限すぎ"; }
@@ -1116,6 +1116,17 @@ function soonToToday(i){                                  // きょうのリス�
   if(blank>=0) e.items[blank]=ni; else e.items.push(ni);
   persist(); renderSoon();
 }
+/* 一回きりの手入れ：前に「3日以内」で書いたものを「1週間以内」にそろえる（2026-10-01）
+   えらんで書いた分も 混ざるが、本人の指定で ぜんぶ 1週間に そろえる */
+(function(){
+  const F="td_soon_span7_v1";
+  if(!localStorage.getItem(F)){
+    const a=loadSoon(); let n=0;
+    a.forEach(it=>{ if(it.span===3){ it.span=7; n++; } });
+    if(n) saveSoon(a);
+    localStorage.setItem(F,"1");
+  }
+})();
 renderSoonCount();
 renderGoalPanel();
 renderItems();
@@ -1124,12 +1135,13 @@ booting=false;   // ここから先のデータ変更だけ「更新」として
 /* ================= きのうの引き継ぎ ================= */
 let carryData=[], carryKey="";
 function collectCarry(refDate){
-  const prevKeys=Object.keys(days).filter(k=>k<refDate).sort().reverse();
-  for(const k of prevKeys){
-    const und=days[k].items.filter(i=>i.t && itemFrac(i)<1);
-    if(und.length) return {key:k, undone:und};
-  }
-  return null;
+  // 引き継げるのは「きのう」だけ。それより古い日の やりのこしは もう 追いかけない
+  // （書きこまない日が つづくと、ずっと昔の日が 出つづけてしまうため）
+  const k=shiftDate(refDate,-1);
+  const day=days[k];
+  if(!day||!day.items) return null;
+  const und=day.items.filter(i=>i.t && itemFrac(i)<1);
+  return und.length ? {key:k, undone:und} : null;
 }
 function checkCarryOver(){                                // 日が変わった時の自動確認
   const flag="td_carry_"+todayStr();
@@ -1140,7 +1152,7 @@ function checkCarryOver(){                                // 日が変わった�
 }
 function openCarry(){                                     // 手動ボタン
   const info=collectCarry(viewDate);
-  if(!info){ showBanner("🌙 引き継ぎ","前回できなかったことは無いよ✨"); return; }
+  if(!info){ showBanner("🌙 引き継ぎ","きのうの やりのこしは 無いよ✨"); return; }
   openCarryModal(info);
 }
 function openCarryModal(info){
